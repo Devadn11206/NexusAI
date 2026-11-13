@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUS AI - Voice Call & Music Deck</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: #131926;
+      --card-border: #1e293b;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --green: #22c55e;
+      --green-glow: rgba(34, 197, 94, 0.2);
+      --yellow: #eab308;
+      --red: #ef4444;
+      --purple: #a855f7;
+      --text: #f8fafc;
+      --subtext: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+    .wrapper {
+      max-width: 720px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Tab Navigation */
+    .tab-bar {
+      display: flex;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 6px;
+      gap: 8px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      background: transparent;
+      border: none;
+      color: var(--subtext);
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .tab-btn.active {
+      background: #1e293b;
+      color: var(--text);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .tab-btn:hover:not(.active) {
+      color: var(--text);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+    .header-section {
+      text-align: center;
+      position: relative;
+    }
+    .avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0284c7, #8b5cf6);
+      margin: 0 auto 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      box-shadow: 0 0 24px var(--accent-glow);
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .subtitle {
+      color: var(--subtext);
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #1e293b;
+      color: var(--subtext);
+      transition: all 0.3s ease;
+    }
+    .status-pill.connected {
+      background: var(--green-glow);
+      color: #4ade80;
+      border: 1px solid rgba(74, 222, 128, 0.4);
+    }
+    .status-pill.connecting {
+      background: rgba(234, 179, 8, 0.15);
+      color: var(--yellow);
+      border: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    .status-pill.speaking {
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+
+    /* Mic Waveform & Meter */
+    .mic-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 12px 16px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 12px;
+      border: 1px solid #1e293b;
+    }
+    .meter-label {
+      font-size: 12px;
+      color: var(--subtext);
+      display: flex;
+      justify-content: space-between;
+    }
+    .meter-bar-container {
+      width: 100%;
+      height: 8px;
+      background: #1e293b;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .meter-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #38bdf8, #22c55e);
+      transition: width 0.05s ease;
+    }
+    canvas#micVisualizer {
+      width: 100%;
+      height: 44px;
+      border-radius: 8px;
+      background: #0b0f19;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button.action-btn {
+      flex: 1;
+      padding: 13px 18px;
+      border-radius: 12px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .btn-call { background: var(--green); color: white; }
+    .btn-call:hover { background: #16a34a; }
+    .btn-hangup { background: var(--red); color: white; display: none; }
+    .btn-hangup:hover { background: #dc2626; }
+
+    /* Transcripts & Speech Box */
+    .transcript-box {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .transcript-card {
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .user-card {
+      background: #0f172a;
+      border-left: 4px solid var(--accent);
+    }
+    .agent-card {
+      background: #111e38;
+      border-left: 4px solid var(--green);
+    }
+    .card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      color: var(--subtext);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Tool Feed */
+    .feed-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .feed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .event-item {
+      padding: 10px 14px;
+      background: #0f172a;
+      border-radius: 8px;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .event-item.tool-start { border-left: 3px solid var(--yellow); }
+    .event-item.tool-complete { border-left: 3px solid var(--green); }
+    .event-time { font-size: 11px; color: var(--subtext); }
+
+    /* Music Deck Specifics */
+    .music-now-playing {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      background: #0f172a;
+      padding: 20px;
+      border-radius: 14px;
+      border: 1px solid #1e293b;
+    }
+    .album-art {
+      width: 80px;
+      height: 80px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #ec4899, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      flex-shrink: 0;
+    }
+    .track-details {
+      flex: 1;
+      overflow: hidden;
+    }
+    .track-title {
+      font-size: 18px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+    .track-artist {
+      color: var(--subtext);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    .badge-player {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #1e293b;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .deck-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .btn-icon {
+      background: #1e293b;
+      border: none;
+      color: var(--text);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      transition: all 0.2s;
+    }
+    .btn-icon:hover { background: #334155; transform: scale(1.05); }
+    .btn-play-pause {
+      width: 56px;
+      height: 56px;
+      background: var(--accent);
+      color: #090d16;
+      font-size: 22px;
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+    .btn-play-pause:hover { background: #7dd3fc; }
+
+    /* Volume & Device Grid */
+    .music-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .grid-card {
+      background: #0f172a;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid #1e293b;
+    }
+    .grid-card-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--subtext);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    select.styled-select {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    /* AI DJ Prompt & Chips */
+    .dj-input-box {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .dj-input-box input {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      outline: none;
+    }
+    .dj-input-box input:focus { border-color: var(--accent); }
+    .dj-input-box button {
+      background: linear-gradient(135deg, #0284c7, #8b5cf6);
+      border: none;
+      color: white;
+      font-weight: 600;
+      padding: 0 20px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      background: #1e293b;
+      color: var(--subtext);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip:hover {
+      background: #334155;
+      color: var(--text);
+    }
+
+    .error-alert {
+      display: none;
+      padding: 12px 16px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--red);
+      color: #fca5a5;
+      border-radius: 10px;
+      font-size: 13px;
+      margin-top: 12px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+
+    <!-- Top Tab Switcher -->
+    <div class="tab-bar">
+      <button id="tabVoiceBtn" class="tab-btn active" onclick="switchTab('voice')">
+        📞 Live Voice Call
+      </button>
+      <button id="tabMusicBtn" class="tab-btn" onclick="switchTab('music')">
+        🎵 Music Deck
+      </button>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TAB 1: LIVE VOICE CALL -->
+    <!-- ======================================================== -->
+    <div id="voiceTabContent" style="display: flex; flex-direction: column; gap: 16px;">
+      <!-- Header & Call Controls -->
+      <div class="card header-section">
+        <div class="avatar">⚡</div>
+        <h1>NEXUS AI - Live Voice Call</h1>
+        <div class="subtitle">Full-Duplex Multimodal Gemini Live API with Visual Diagnostics</div>
+
+        <div id="statusPill" class="status-pill">🔴 Disconnected</div>
+
+        <!-- Mic Audio Meter & Waveform -->
+        <div class="mic-panel">
+          <div class="meter-label">
+            <span>Microphone Input Level</span>
+            <span id="meterPercent">0%</span>
+          </div>
+          <div class="meter-bar-container">
+            <div id="micMeterBar" class="meter-bar"></div>
+          </div>
+          <canvas id="micVisualizer"></canvas>
+        </div>
+
+        <div class="controls">
+          <button id="callBtn" class="action-btn btn-call" onclick="startLiveCall()">
+            📞 Start Live Call
+          </button>
+          <button id="hangupBtn" class="action-btn btn-hangup" onclick="endLiveCall()">
+            🛑 End Call
+          </button>
+        </div>
+
+        <!-- Dynamic Neural Voice Selector -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding: 10px 14px; background: rgba(15, 23, 42, 0.6); border-radius: 10px; border: 1px solid #1e293b;">
+          <span style="font-size: 13px; color: var(--subtext); font-weight: 600;">🎙️ Voice Profile:</span>
+          <select id="voiceProfileSelect" class="styled-select" style="width: auto; padding: 4px 10px; font-size: 12px;" onchange="changeVoiceProfile(this.value)">
+            <option value="neerja" selected>Neerja (Indian English ♀)</option>
+            <option value="prabhat">Prabhat (Indian English ♂)</option>
+            <option value="aria">Aria (US Neural ♀)</option>
+            <option value="guy">Guy (US Neural ♂)</option>
+            <option value="pallavi">Pallavi (Tamil ♀)</option>
+            <option value="shruti">Shruti (Telugu ♀)</option>
+            <option value="swara">Swara (Hindi ♀)</option>
+          </select>
+        </div>
+
+        <!-- Voice HITL Approval Prompt Banner -->
+        <div id="voiceHitlBanner" style="display: none; margin-top: 12px; padding: 14px; background: rgba(234, 179, 8, 0.15); border: 1px solid var(--yellow); border-radius: 12px; text-align: left;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <span style="font-size: 13px; font-weight: 700; color: var(--yellow);">⚠️ Voice Confirmation Required</span>
+            <span style="font-size: 11px; color: var(--subtext);">Say "Yes confirm" or "Cancel"</span>
+          </div>
+          <div id="voiceHitlActionText" style="font-size: 13px; color: var(--text); margin-bottom: 10px;"></div>
+          <div style="display: flex; gap: 8px;">
+            <button onclick="respondVoiceHitl(true)" style="padding: 6px 14px; border-radius: 6px; border: none; background: var(--green); color: white; font-weight: 600; cursor: pointer; font-size: 12px;">Approve</button>
+            <button onclick="respondVoiceHitl(false)" style="padding: 6px 14px; border-radius: 6px; border: none; background: var(--red); color: white; font-weight: 600; cursor: pointer; font-size: 12px;">Reject</button>
+          </div>
+        </div>
+
+        <div id="errorAlert" class="error-alert"></div>
+      </div>
+
+      <!-- Live Transcript & Spoken Reply -->
+      <div class="card transcript-box">
+        <div class="transcript-card user-card">
+          <div class="card-label">🎤 You Said:</div>
+          <div id="userTranscriptText" style="color: var(--subtext); font-style: italic;">(Speak into your microphone...)</div>
+        </div>
+        <div class="transcript-card agent-card">
+          <div class="card-label">🔊 NEXUS AI Spoke:</div>
+          <div id="agentTranscriptText" style="color: var(--subtext); font-style: italic;">(Waiting for response...)</div>
+        </div>
+      </div>
+
+      <!-- Live Tool Execution Feed -->
+      <div class="card">
+        <div class="feed-title">⚡ Real-Time Tool Execution Feed</div>
+        <div id="toolFeed" class="feed-list">
+          <div class="event-item" style="color: var(--subtext);">Ready for tools: play_music_request, control_music_playback, search_web...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TAB 2: UNIFIED MUSIC DECK -->
+    <!-- ======================================================== -->
+    <div id="musicTabContent" style="display: none; flex-direction: column; gap: 16px;">
+      
+      <!-- Now Playing & Controls Card -->
+      <div class="card">
+        <div class="music-now-playing">
+          <div class="album-art" id="deckArt">🎧</div>
+          <div class="track-details">
+            <div class="track-title" id="deckTrackTitle">YouTube Music / Spotify Stream</div>
+            <div class="track-artist" id="deckTrackArtist">Connected to Windows GSMTC</div>
+            <span class="badge-player" id="deckPlayerBadge">Active Session</span>
+          </div>
+        </div>
+
+        <!-- Playback Buttons -->
+        <div class="deck-controls">
+          <button class="btn-icon" onclick="sendMusicControl('previous')" title="Previous Track">⏮</button>
+          <button class="btn-icon btn-play-pause" id="btnDeckPlayPause" onclick="sendMusicControl('play_pause')" title="Play / Pause">▶</button>
+          <button class="btn-icon" onclick="sendMusicControl('next')" title="Next Track">⏭</button>
+        </div>
+
+        <!-- Volume & Device Grid -->
+        <div class="music-grid">
+          <div class="grid-card">
+            <div class="grid-card-title">🔊 Master Volume</div>
+            <div class="slider-row">
+              <input type="range" id="deckVolumeSlider" min="0" max="100" value="50" oninput="updateDeckVolume(this.value)">
+              <span id="deckVolumeVal" style="font-size: 13px; font-weight: 600; width: 36px;">50%</span>
+            </div>
+          </div>
+          <div class="grid-card">
+            <div class="grid-card-title">🎧 Output Device</div>
+            <select id="deckDeviceSelect" class="styled-select">
+              <option value="default">Default System Audio / Speakers</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Personal DJ Generator -->
+      <div class="card">
+        <div class="feed-title">✨ AI Personal DJ Playlist Builder</div>
+        <div class="subtitle" style="margin-bottom: 8px;">Describe your mood, activity, era or language — NEXUS AI builds and plays it.</div>
+        <div class="dj-input-box">
+          <input type="text" id="djPromptInput" placeholder="e.g. 2-hour ML study playlist, Tamil acoustic hits..." onkeydown="if(event.key==='Enter') triggerAIDJ()">
+          <button onclick="triggerAIDJ()">Play Mix</button>
+        </div>
+        <div class="chips-row">
+          <div class="chip" onclick="quickDJ('2-hour playlist for studying machine learning')">🧠 2-Hr ML Study</div>
+          <div class="chip" onclick="quickDJ('Tamil high energy hits')">🔥 Tamil Hits</div>
+          <div class="chip" onclick="quickDJ('Hindi acoustic chill lo-fi')">☕ Hindi Lo-Fi</div>
+          <div class="chip" onclick="quickDJ('Gym workout EDM motivation')">⚡ Gym Workout</div>
+          <div class="chip" onclick="quickDJ('Late night peaceful sleep music')">🌙 Late Night Chill</div>
+        </div>
+      </div>
+
+      <!-- Sleep Timer Card -->
+      <div class="card">
+        <div class="feed-title">⏱️ Fade-Out Sleep Timer</div>
+        <div class="subtitle" style="margin-bottom: 8px;">Smoothly lowers volume over 15 seconds before pausing music.</div>
+        <div class="chips-row">
+          <div class="chip" onclick="setSleepTimer(15)">⏳ 15 Minutes</div>
+          <div class="chip" onclick="setSleepTimer(30)">⏳ 30 Minutes</div>
+          <div class="chip" onclick="setSleepTimer(60)">⏳ 60 Minutes</div>
+          <div class="chip" onclick="setSleepTimer(90)">⏳ 90 Minutes</div>
+        </div>
+        <div id="sleepTimerNotice" style="font-size: 12px; color: var(--green); margin-top: 10px; display: none;"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let ws = null;
+    let audioContext = null;
+    let micStream = null;
+    let analyser = null;
+    let animFrame = null;
+    let speechRecognition = null;
+    let musicPollInterval = null;
+
+    // Tab Switching
+    function switchTab(tab) {
+      const voiceContent = document.getElementById("voiceTabContent");
+      const musicContent = document.getElementById("musicTabContent");
+      const btnVoice = document.getElementById("tabVoiceBtn");
+      const btnMusic = document.getElementById("tabMusicBtn");
+
+      if (tab === "voice") {
+        voiceContent.style.display = "flex";
+        musicContent.style.display = "none";
+        btnVoice.className = "tab-btn active";
+        btnMusic.className = "tab-btn";
+        if (musicPollInterval) clearInterval(musicPollInterval);
+      } else {
+        voiceContent.style.display = "none";
+        musicContent.style.display = "flex";
+        btnVoice.className = "tab-btn";
+        btnMusic.className = "tab-btn active";
+        pollMusicStatus();
+        musicPollInterval = setInterval(pollMusicStatus, 4000);
+      }
+    }
+
+    // Start Live Call
+    async function startLiveCall() {
+      const statusPill = document.getElementById("statusPill");
+      const callBtn = document.getElementById("callBtn");
+      const hangupBtn = document.getElementById("hangupBtn");
+      const errorAlert = document.getElementById("errorAlert");
+
+      errorAlert.style.display = "none";
+      statusPill.innerText = "🟡 Connecting to NEXUS AI...";
+      statusPill.className = "status-pill connecting";
+
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${location.host}/api/v1/ws/live_call?user_id=6663290532`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = async () => {
+          statusPill.innerText = "🟢 Call Active (Live Full-Duplex)";
+          statusPill.className = "status-pill connected";
+          callBtn.style.display = "none";
+          hangupBtn.style.display = "flex";
+          await startMicrophoneStream();
+          startBrowserSpeechRecognition();
+        };
+
+        ws.onmessage = async (event) => {
+          if (event.data instanceof ArrayBuffer) {
+            playIncomingPCM(event.data);
+          } else if (typeof event.data === "string") {
+            try {
+              const msg = JSON.parse(event.data);
+              handleDiagnosticMessage(msg);
+            } catch (e) {
+              console.log("WS text:", event.data);
+            }
+          }
+        };
+
+        ws.onclose = (e) => {
+          resetCallUI();
+          if (e.code === 4003) {
+            showError("Authentication Failed: User ID is not whitelisted.");
+          }
+        };
+
+        ws.onerror = (err) => {
+          showError("WebSocket Connection Error: Please verify server is running on port 8000.");
+        };
+
+      } catch (err) {
+        showError("Call Initialization Error: " + err.message);
+      }
+    }
+
+    function handleDiagnosticMessage(msg) {
+      const statusPill = document.getElementById("statusPill");
+
+      if (msg.type === "agent_transcript" && msg.text) {
+        const agentText = document.getElementById("agentTranscriptText");
+        agentText.style.color = "var(--text)";
+        agentText.style.fontStyle = "normal";
+        agentText.innerText = msg.text;
+
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(msg.text);
+          utterance.rate = 1.05;
+          utterance.onstart = () => {
+            statusPill.innerText = "🔊 NEXUS AI Speaking...";
+            statusPill.className = "status-pill speaking";
+          };
+          utterance.onend = () => {
+            statusPill.innerText = "🟢 Call Active (Listening...)";
+            statusPill.className = "status-pill connected";
+          };
+          window.speechSynthesis.speak(utterance);
+        }
+      } else if (msg.type === "user_transcript" && msg.text) {
+        const userText = document.getElementById("userTranscriptText");
+        userText.style.color = "var(--text)";
+        userText.style.fontStyle = "normal";
+        userText.innerText = msg.text;
+      } else if (msg.type === "audio_state") {
+        if (msg.speaking) {
+          statusPill.innerText = "🔊 NEXUS AI Speaking...";
+          statusPill.className = "status-pill speaking";
+        } else {
+          statusPill.innerText = "🟢 Call Active (Listening...)";
+          statusPill.className = "status-pill connected";
+        }
+      } else if (msg.type === "interrupted") {
+        statusPill.innerText = "⚡ Interrupted (Barge-In)";
+        setTimeout(() => {
+          statusPill.innerText = "🟢 Call Active (Listening...)";
+          statusPill.className = "status-pill connected";
+        }, 1200);
+      } else if (msg.type === "tool_start") {
+        addToolFeedItem(`⚡ Triggered: <b>${msg.name}</b>(${JSON.stringify(msg.args)})`, "tool-start");
+      } else if (msg.type === "tool_complete") {
+        addToolFeedItem(`✅ Completed: <b>${msg.name}</b> [${msg.status}]`, "tool-complete");
+      }
+    }
+
+    function addToolFeedItem(htmlContent, className) {
+      const feed = document.getElementById("toolFeed");
+      const timeStr = new Date().toLocaleTimeString();
+      const item = document.createElement("div");
+      item.className = `event-item ${className}`;
+      item.innerHTML = `<span>${htmlContent}</span><span class="event-time">${timeStr}</span>`;
+      feed.prepend(item);
+    }
+
+    function startBrowserSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+
+      speechRecognition = new SpeechRecognition();
+      speechRecognition.continuous = true;
+      speechRecognition.interimResults = true;
+      speechRecognition.lang = "en-US";
+
+      speechRecognition.onresult = (event) => {
+        let transcript = "";
+        let isFinal = false;
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+          if (event.results[i].isFinal) isFinal = true;
+        }
+        if (transcript.trim()) {
+          const userText = document.getElementById("userTranscriptText");
+          userText.style.color = "var(--text)";
+          userText.style.fontStyle = "normal";
+          userText.innerText = transcript;
+
+          // Barge-in detection: If user speaks while assistant is speaking, cancel speech immediately
+          if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "barge_in" }));
+            }
+          }
+
+          if (isFinal && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "user_speech",
+              text: transcript.trim(),
+              is_final: true
+            }));
+          }
+        }
+      };
+
+      speechRecognition.onerror = (e) => console.log("SpeechRec error:", e);
+      speechRecognition.start();
+    }
+
+    async function startMicrophoneStream() {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = audioContext.createMediaStreamSource(micStream);
+
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+        }
+        ws.send(pcm16.buffer);
+      };
+
+      drawVisualizer();
+    }
+
+    function drawVisualizer() {
+      const canvas = document.getElementById("micVisualizer");
+      const ctx = canvas.getContext("2d");
+      const meterBar = document.getElementById("micMeterBar");
+      const meterPercent = document.getElementById("meterPercent");
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      function render() {
+        animFrame = requestAnimationFrame(render);
+        analyser.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        const avg = sum / dataArray.length;
+        const pct = Math.min(100, Math.round((avg / 128) * 100));
+        meterBar.style.width = pct + "%";
+        meterPercent.innerText = pct + "%";
+
+        ctx.fillStyle = "#0b0f19";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / dataArray.length) * 2.5;
+        let x = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const barHeight = (dataArray[i] / 255) * canvas.height;
+          ctx.fillStyle = `rgb(${dataArray[i] + 50}, 189, 248)`;
+          ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+          x += barWidth + 1;
+        }
+      }
+      render();
+    }
+
+    function playIncomingPCM(arrayBuffer) {
+      if (!audioContext) audioContext = new AudioContext({ sampleRate: 24000 });
+      const pcm16 = new Int16Array(arrayBuffer);
+      const float32 = new Float32Array(pcm16.length);
+      for (let i = 0; i < pcm16.length; i++) {
+        float32[i] = pcm16[i] / 0x7FFF;
+      }
+      const buffer = audioContext.createBuffer(1, float32.length, 24000);
+      buffer.copyToChannel(float32, 0);
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      source.start();
+    }
+
+    function endLiveCall() {
+      if (ws) {
+        try { ws.send(JSON.stringify({ action: "hangup" })); } catch (e) {}
+        ws.close();
+      }
+      resetCallUI();
+    }
+
+    function resetCallUI() {
+      const statusPill = document.getElementById("statusPill");
+      statusPill.innerText = "🔴 Disconnected";
+      statusPill.className = "status-pill";
+      document.getElementById("callBtn").style.display = "flex";
+      document.getElementById("hangupBtn").style.display = "none";
+      document.getElementById("micMeterBar").style.width = "0%";
+      document.getElementById("meterPercent").innerText = "0%";
+
+      if (speechRecognition) {
+        try { speechRecognition.stop(); } catch (e) {}
+      }
+      if (animFrame) cancelAnimationFrame(animFrame);
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
+    }
+
+    function showError(msg) {
+      const alertBox = document.getElementById("errorAlert");
+      alertBox.innerText = "⚠️ " + msg;
+      alertBox.style.display = "block";
+      resetCallUI();
+    }
+
+    // ========================================================
+    // MUSIC DECK CLIENT LOGIC
+    // ========================================================
+    async function pollMusicStatus() {
+      try {
+        const resp = await fetch("/api/v1/music/status");
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (data.media) {
+          document.getElementById("deckTrackTitle").innerText = data.media.title || "Active Playback";
+          document.getElementById("deckTrackArtist").innerText = data.media.artist || "Connected Player";
+          document.getElementById("deckPlayerBadge").innerText = data.media.playback_status || "Active";
+          const playBtn = document.getElementById("btnDeckPlayPause");
+          playBtn.innerText = data.media.playback_status === "playing" ? "⏸" : "▶";
+        }
+        if (data.volume !== undefined) {
+          document.getElementById("deckVolumeSlider").value = data.volume;
+          document.getElementById("deckVolumeVal").innerText = data.volume + "%";
+        }
+        if (data.sleep_timer && data.sleep_timer.active) {
+          const notice = document.getElementById("sleepTimerNotice");
+          notice.style.display = "block";
+          notice.innerText = `⏳ Sleep timer active until ${new Date(data.sleep_timer.stops_at).toLocaleTimeString()}`;
+        }
+      } catch (err) {
+        console.log("Music status poll note:", err);
+      }
+    }
+
+    async function sendMusicControl(action) {
+      try {
+        await fetch("/api/v1/music/control", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: action })
+        });
+        setTimeout(pollMusicStatus, 500);
+      } catch (err) {
+        console.error("Music control error:", err);
+      }
+    }
+
+    async function updateDeckVolume(val) {
+      document.getElementById("deckVolumeVal").innerText = val + "%";
+      try {
+        await fetch("/api/v1/music/volume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ volume_percent: parseInt(val) })
+        });
+      } catch (err) {
+        console.error("Volume set error:", err);
+      }
+    }
+
+    async function triggerAIDJ() {
+      const prompt = document.getElementById("djPromptInput").value.trim();
+      if (!prompt) return;
+      quickDJ(prompt);
+    }
+
+    async function quickDJ(promptText) {
+      document.getElementById("deckTrackTitle").innerText = "Generating Mix...";
+      document.getElementById("deckTrackArtist").innerText = promptText;
+      try {
+        const resp = await fetch("/api/v1/music/dj", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: promptText, duration_minutes: 60 })
+        });
+        const data = await resp.json();
+        setTimeout(pollMusicStatus, 1500);
+      } catch (err) {
+        console.error("DJ trigger error:", err);
+      }
+    }
+
+    async function setSleepTimer(minutes) {
+      try {
+        const resp = await fetch("/api/v1/music/timer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ minutes: minutes })
+        });
+        const data = await resp.json();
+        const notice = document.getElementById("sleepTimerNotice");
+        notice.style.display = "block";
+        notice.innerText = `⏳ Sleep timer set for ${minutes} minutes.`;
+      } catch (err) {
+        console.error("Timer error:", err);
+      }
+    }
+    function changeVoiceProfile(val) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "set_voice", voice_key: val }));
+      }
+    }
+
+    function respondVoiceHitl(approved) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "user_speech",
+          text: approved ? "yes confirm" : "cancel",
+          is_final: true
+        }));
+      }
+      document.getElementById("voiceHitlBanner").style.display = "none";
+    }
+  </script>
+</body>
+</html>

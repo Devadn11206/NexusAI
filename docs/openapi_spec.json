@@ -1,0 +1,288 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "NEXUS AI - Remote Ingress & Webhook API",
+    "version": "1.0.0",
+    "description": "Production API for NEXUS AI multi-agent orchestration, webhooks, and health telemetry."
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Telemetry",
+        "operationId": "get_health_status",
+        "responses": {
+          "200": {
+            "description": "System health status including PostgreSQL and Redis availability.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/telegram": {
+      "post": {
+        "summary": "Telegram Ingress Webhook",
+        "operationId": "telegram_webhook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramWebhookPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payload accepted and enqueued for orchestration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookIngressResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sender rejected by Security Gatekeeper."
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/whatsapp": {
+      "post": {
+        "summary": "WhatsApp Ingress Webhook",
+        "operationId": "whatsapp_webhook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhatsAppWebhookPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payload accepted and enqueued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookIngressResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sender rejected by Security Gatekeeper."
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "summary": "Get Task Status",
+        "operationId": "get_task_status",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task status and execution metrics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatusResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found."
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/hitl-approve": {
+      "post": {
+        "summary": "Human-in-the-Loop Approval Decision",
+        "operationId": "submit_hitl_approval",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HITLApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision registered and execution resumed."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthStatusResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "healthy" },
+          "postgres": { "type": "string", "example": "connected" },
+          "redis": { "type": "string", "example": "connected" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        },
+        "required": ["status", "postgres", "redis", "timestamp"]
+      },
+      "TelegramWebhookPayload": {
+        "type": "object",
+        "properties": {
+          "update_id": { "type": "integer" },
+          "message": {
+            "type": "object",
+            "properties": {
+              "message_id": { "type": "integer" },
+              "from": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "integer" },
+                  "is_bot": { "type": "boolean" },
+                  "first_name": { "type": "string" },
+                  "username": { "type": "string" }
+                },
+                "required": ["id"]
+              },
+              "chat": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "integer" },
+                  "type": { "type": "string" }
+                },
+                "required": ["id"]
+              },
+              "text": { "type": "string" },
+              "date": { "type": "integer" }
+            },
+            "required": ["message_id", "from", "chat"]
+          }
+        },
+        "required": ["update_id"]
+      },
+      "WhatsAppWebhookPayload": {
+        "type": "object",
+        "properties": {
+          "object": { "type": "string" },
+          "entry": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "object",
+                        "properties": {
+                          "messaging_product": { "type": "string" },
+                          "metadata": { "type": "object" },
+                          "contacts": { "type": "array", "items": { "type": "object" } },
+                          "messages": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "from": { "type": "string" },
+                                "id": { "type": "string" },
+                                "timestamp": { "type": "string" },
+                                "type": { "type": "string" },
+                                "text": {
+                                  "type": "object",
+                                  "properties": {
+                                    "body": { "type": "string" }
+                                  }
+                                }
+                              },
+                              "required": ["from", "id", "type"]
+                            }
+                          }
+                        }
+                      },
+                      "field": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": ["object", "entry"]
+      },
+      "WebhookIngressResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "task_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["success", "task_id", "status"]
+      },
+      "TaskStatusResponse": {
+        "type": "object",
+        "properties": {
+          "task_id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string" },
+          "channel": { "type": "string" },
+          "prompt": { "type": "string" },
+          "result_summary": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["task_id", "user_id", "status", "channel", "prompt", "created_at"]
+      },
+      "HITLApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "approved": { "type": "boolean" },
+          "reason": { "type": "string" },
+          "approver_id": { "type": "string" }
+        },
+        "required": ["approved", "approver_id"]
+      }
+    }
+  }
+}
+
