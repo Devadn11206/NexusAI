@@ -98,8 +98,17 @@ async def dispatch_tool_call(tool_name: str, tool_args: Dict[str, Any]) -> Dict[
 
     elif name_clean in ("search_web", "web_search", "google_search"):
         query = tool_args.get("query") or tool_args.get("text") or ""
+        take_shot = tool_args.get("take_screenshot", False) or tool_args.get("screenshot", False)
         from app.tools.browser import search_web
-        return await search_web(query=query, max_results=8)
+        return await search_web(query=query, max_results=8, take_screenshot=take_shot)
+
+    elif name_clean in ("capture_browser_screenshot", "browser_screenshot"):
+        from app.tools.browser import capture_browser_screenshot
+        filename = tool_args.get("filename") or "browser_tab.png"
+        url = tool_args.get("url")
+        sel = tool_args.get("result_selector") or tool_args.get("selector")
+        shot_path = await capture_browser_screenshot(filename=filename, url=url, result_selector=sel)
+        return {"status": "success", "screenshot_path": shot_path}
 
     elif name_clean in ("play_web_music", "play_music", "stream_music"):
         service = tool_args.get("service") or "youtube_music"
@@ -389,13 +398,23 @@ async def task_planner_node(state: NexusState) -> Dict[str, Any]:
     # 0. Primary Universal Browser & Web Routing
     if category == "BROWSER":
         instruction = entities.get("instruction") or entities.get("query") or resolved_query
+        take_screenshot = any(s in p_lower for s in ["screenshot", "screen shot", "capture", "photo", "pic"])
         plan_steps.append({
             "step_id": "step_1",
             "description": f"Execute browser action in visible Chrome: {instruction}",
             "tool_name": "execute_browser_intent",
-            "tool_args": {"instruction": instruction},
+            "tool_args": {"instruction": instruction, "take_screenshot": take_screenshot},
             "status": "pending",
         })
+        # If user explicitly requested screenshot and tool didn't embed it, strictly sequence screenshot AFTER
+        if take_screenshot and "take_screenshot" not in plan_steps[0]["tool_args"]:
+            plan_steps.append({
+                "step_id": "step_2",
+                "description": "Capture post-render browser tab screenshot verification",
+                "tool_name": "capture_browser_screenshot",
+                "tool_args": {"filename": "browser_search_proof.png"},
+                "status": "pending",
+            })
 
     # 1. Compound Autonomous Research to Excel (Module 3)
     elif "internship" in p_lower or ("research" in p_lower and "excel" in p_lower) or "academic" in p_lower or "monitor" in p_lower or ("arxiv" in p_lower and "paper" in p_lower):

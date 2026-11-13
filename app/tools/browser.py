@@ -124,7 +124,95 @@ async def get_visible_chrome_page() -> Page:
         return target_page
 
 
-async def search_web(query: str, max_results: int = 8) -> Dict[str, Any]:
+async def wait_until_visually_ready(
+    page: Page,
+    result_selector: Optional[str] = None,
+    timeout_ms: int = 8000,
+) -> bool:
+    """
+    Robust post-render settlement pipeline before capturing screenshots:
+    1. Waits for page 'load' event (with graceful timeout for heavy streaming SPAs).
+    2. If result_selector is provided, waits for elements matching it to become visible.
+    3. Evaluates in-page visual readiness (document.fonts.ready and img.complete).
+    4. Settles for 600ms to allow CSS transitions and paint pipelines to finish.
+    """
+    try:
+        # Step 1: Wait for load state gracefully
+        try:
+            await page.wait_for_load_state("load", timeout=timeout_ms)
+        except Exception as load_err:
+            logger.debug(f"[BrowserEngine] Load state wait note ({load_err}); proceeding to DOM checks.")
+
+        # Step 2: If result_selector provided, wait for it to be visible
+        if result_selector:
+            try:
+                locator = page.locator(result_selector).first
+                await locator.wait_for(state="visible", timeout=timeout_ms)
+            except Exception as sel_err:
+                logger.debug(f"[BrowserEngine] Selector '{result_selector}' wait note: {sel_err}")
+
+        # Step 3: Evaluate in-page fonts and image completion
+        try:
+            await page.evaluate("""async () => {
+                try {
+                    if (document.fonts && document.fonts.ready) {
+                        await Promise.race([
+                            document.fonts.ready,
+                            new Promise(resolve => setTimeout(resolve, 2000))
+                        ]);
+                    }
+                    const images = Array.from(document.querySelectorAll('img'));
+                    const pendingImages = images
+                        .filter(img => !img.complete && img.src)
+                        .map(img => new Promise(resolve => {
+                            img.onload = img.onerror = resolve;
+                            setTimeout(resolve, 1500);
+                        }));
+                    if (pendingImages.length > 0) {
+                        await Promise.race([
+                            Promise.all(pendingImages),
+                            new Promise(resolve => setTimeout(resolve, 2000))
+                        ]);
+                    }
+                } catch (e) {
+                    // Ignore client-side script inspection errors
+                }
+            }""")
+        except Exception as eval_err:
+            logger.debug(f"[BrowserEngine] In-page visual readiness evaluation note: {eval_err}")
+
+        # Step 4: Final paint settle delay
+        await page.wait_for_timeout(600)
+        return True
+    except Exception as exc:
+        logger.warning(f"[BrowserEngine] wait_until_visually_ready encountered: {exc}")
+        return False
+
+
+async def capture_browser_screenshot(
+    filename: str = "browser_tab.png",
+    url: Optional[str] = None,
+    result_selector: Optional[str] = None,
+) -> str:
+    """
+    Captures a screenshot of the active visible Chrome tab or navigates to url if provided,
+    strictly waiting until visually ready.
+    """
+    safe_path = resolve_safe_workspace_path(filename)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+
+    page = await get_visible_chrome_page()
+    if url:
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+
+    await wait_until_visually_ready(page, result_selector=result_selector)
+    await page.screenshot(path=str(safe_path))
+    return str(safe_path)
+
+
+async def search_web(query: str, max_results: int = 8, take_screenshot: bool = False) -> Dict[str, Any]:
     """
     Direct Query-URL Web Search with Visible Chrome Navigation and Anti-Block Fallback:
     1. URL-encodes query and navigates directly to Google Search.
@@ -171,8 +259,10 @@ async def search_web(query: str, max_results: int = 8) -> Dict[str, Any]:
         except Exception:
             pass
 
-        # Step 3: Resilient Result Extraction
-        await asyncio.sleep(1.0)
+        # Step 3: Wait until visually ready for search results
+        result_sel = "div#search a h3, div#rso h3, article[data-testid='result']"
+        await wait_until_visually_ready(page, result_selector=result_sel, timeout_ms=8000)
+
         content_html = await page.content()
         soup = BeautifulSoup(content_html, "html.parser")
 
@@ -238,7 +328,20 @@ async def search_web(query: str, max_results: int = 8) -> Dict[str, Any]:
         except Exception:
             pass
 
-    return {
+    screenshot_path: Optional[str] = None
+    if take_screenshot:
+        try:
+            page = await get_visible_chrome_page()
+            shot_file = resolve_safe_workspace_path(f"images/search_{uuid.uuid4().hex[:6]}.png")
+            shot_file.parent.mkdir(parents=True, exist_ok=True)
+            await wait_until_visually_ready(page, timeout_ms=3000)
+            await page.screenshot(path=str(shot_file))
+            screenshot_path = str(shot_file)
+            logger.info(f"[BrowserEngine] Post-render search screenshot captured: {screenshot_path}")
+        except Exception as shot_err:
+            logger.warning(f"[BrowserEngine] Post-render search screenshot note: {shot_err}")
+
+    response_data = {
         "status": "success",
         "query": clean_q,
         "engine": used_engine,
@@ -246,6 +349,11 @@ async def search_web(query: str, max_results: int = 8) -> Dict[str, Any]:
         "count": len(results),
         "results": results,
     }
+    if screenshot_path:
+        response_data["screenshot_path"] = screenshot_path
+        response_data["artifacts"] = [screenshot_path]
+
+    return response_data
 
 
 async def execute_browser_intent(instruction: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -376,9 +484,10 @@ async def execute_browser_intent(instruction: str, user_context: Optional[Dict[s
             title = await page.title()
             page_url = page.url
 
-            # Capture tab screenshot proof
+            # Capture tab screenshot proof with visual readiness wait
             shot_file = resolve_safe_workspace_path(f"images/browser_{uuid.uuid4().hex[:6]}.png")
             shot_file.parent.mkdir(parents=True, exist_ok=True)
+            await wait_until_visually_ready(page, timeout_ms=8000)
             await page.screenshot(path=str(shot_file))
 
             # Detect login wall
@@ -444,6 +553,7 @@ async def execute_browser_intent(instruction: str, user_context: Optional[Dict[s
         page = await get_visible_chrome_page()
         shot_file = resolve_safe_workspace_path(f"images/search_{uuid.uuid4().hex[:6]}.png")
         shot_file.parent.mkdir(parents=True, exist_ok=True)
+        await wait_until_visually_ready(page, timeout_ms=3000)
         await page.screenshot(path=str(shot_file))
         artifacts.append(str(shot_file))
     except Exception:
@@ -754,7 +864,7 @@ class BrowserEngine:
             logger.error(f"[BrowserEngine] type_and_submit_search error: {exc}")
             return False
 
-    async def navigate_page(self, url: str) -> Dict[str, Any]:
+    async def navigate_page(self, url: str, take_screenshot: bool = False) -> Dict[str, Any]:
         """Loads target URL, extracts title, and produces token-optimized sanitized Markdown."""
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
@@ -764,18 +874,29 @@ class BrowserEngine:
 
         try:
             resp = await page.goto(url, timeout=self.timeout_ms, wait_until="domcontentloaded")
-            await self.wait_for_network_idle(page, timeout=5000)
+            await wait_until_visually_ready(page, timeout_ms=5000)
             title = await page.title()
             html = await page.content()
             markdown_content = clean_html_to_markdown(html)
 
-            return {
+            shot_path = None
+            if take_screenshot:
+                safe_shot = resolve_safe_workspace_path(f"images/nav_{uuid.uuid4().hex[:6]}.png")
+                safe_shot.parent.mkdir(parents=True, exist_ok=True)
+                await page.screenshot(path=str(safe_shot))
+                shot_path = str(safe_shot)
+
+            res = {
                 "url": url,
                 "title": title,
                 "status_code": resp.status if resp else 200,
                 "text_content": markdown_content[:5000],
                 "full_text_length": len(markdown_content),
             }
+            if shot_path:
+                res["screenshot_path"] = shot_path
+                res["artifacts"] = [shot_path]
+            return res
         except Exception as exc:
             logger.error(f"[BrowserEngine] Navigation to '{url}' failed: {exc}")
             return {
@@ -787,6 +908,10 @@ class BrowserEngine:
             }
         finally:
             await context.close()
+
+    async def navigate_and_extract(self, url: str, take_screenshot: bool = False) -> Dict[str, Any]:
+        """Alias for navigate_page with atomic visual screenshot support."""
+        return await self.navigate_page(url=url, take_screenshot=take_screenshot)
 
     async def get_accessibility_tree(self, url: str) -> Dict[str, Any]:
         """
@@ -870,7 +995,7 @@ class BrowserEngine:
 
         try:
             await page.goto(url, timeout=self.timeout_ms, wait_until="domcontentloaded")
-            await page.wait_for_timeout(1000)
+            await wait_until_visually_ready(page, timeout_ms=5000)
             await page.screenshot(path=str(safe_path), full_page=True)
             return str(safe_path)
         finally:

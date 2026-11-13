@@ -1430,10 +1430,13 @@ async def scroll(clicks: int, direction: str = "down") -> Dict[str, Any]:
 async def capture_desktop_screenshot(filename: str = "desktop_state.png", region: Optional[List[int]] = None) -> str:
     """
     Captures entire desktop or subregion and saves to ./workspace/.
-    Enforces sandbox path isolation and handles headless displays with virtual canvas fallback.
+    Enforces sandbox path isolation, window settle delays, and handles headless displays with virtual canvas fallback.
     """
     safe_path = resolve_safe_workspace_path(filename)
     safe_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Window animation / paint settle delay before screen grab
+    await asyncio.sleep(0.75)
 
     def _sync_capture():
         try:

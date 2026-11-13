@@ -24,6 +24,7 @@ Target Agent Capabilities:
   * To control playback: tool_name `control_media` with `tool_params: {"action": "play" | "pause" | "stop" | "next" | "previous" | "forward" | "rewind" | "volume_up" | "volume_down" | "mute" | "shuffle" | "repeat"}`.
 - BrowserAgent: Web searches, reading websites, scraping data, navigating portals, interacting with web apps. Tool name: `execute_browser_intent` (for any natural-language web browsing, search, URL opening, download, or site interaction) or `search_web`.
   * For ANY browser request (e.g. "open Chrome and search for X", "google Y", "open github.com", "check leetcode"): tool_name `execute_browser_intent` with `tool_params: {"instruction": "<full prompt>"}`. DO NOT route web searches to `launch_application("chrome")`.
+  * For requests that say "search X and screenshot" or "open Y and take screenshot": set `tool_params: {"instruction": "<full prompt>", "take_screenshot": true}`. If separate screenshot step is generated, it MUST depend on the browser step (`depends_on: ["step_1"]`) to guarantee the page is rendered before capturing.
 - FileAgent: File & folder operations in ./workspace/, reading/writing CSV, text, PDFs, Excel sheets (.xlsx), Word docs (.docx). Tool name: `create_file`, `read_file`, `organize_directory`.
 - DeveloperAgent: Shell commands, Git operations, running Python scripts, debugging code, executing tests.
   * To execute shell commands: tool_name `run_command` with `tool_params: {"command": "dir"}`.

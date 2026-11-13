@@ -137,12 +137,25 @@ async def browser_agent_node(state: NexusState) -> Dict[str, Any]:
                 result_data = chrome_res
             elif tool_name in ("web_search", "search_web", "search"):
                 search_query = params.get("query", query)
+                take_shot = params.get("take_screenshot", False) or params.get("screenshot", False)
                 results = await browser.search_web(query=search_query, max_results=5)
                 result_data = {
                     "status": "success",
                     "agent": "BrowserAgent",
                     "tool": "search_web",
                     "results_count": len(results),
+                    "results": results,
+                }
+                if take_shot:
+                    from app.tools.browser import capture_browser_screenshot
+                    shot_path = await capture_browser_screenshot(filename=f"search_{step_id}.png")
+                    result_data["screenshot_path"] = shot_path
+                    artifacts.append({
+                        "step_id": step_id,
+                        "filename": f"search_{step_id}.png",
+                        "path": shot_path,
+                        "type": "image/png",
+                    })
                     "results": results,
                 }
             elif tool_name in ("navigate_page", "browse", "scrape", "open_url"):
