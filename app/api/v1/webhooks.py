@@ -66,10 +66,10 @@ async def execute_task_graph_background(
 
         # Outbound notification on completion
         completed_count = len(final_state.get("completed_steps", []))
+        verification_summary = final_state.get("agent_outputs", {}).get("verification", {}).get("summary", "Finished.")
         summary = (
-            f"✅ *NEXUS AI Task Complete!*\n\n"
-            f"Executed {completed_count} steps successfully.\n"
-            f"Evidence: _{final_state.get('agent_outputs', {}).get('verification', {}).get('summary', 'Finished.')}_"
+            f"✅ *NEXUS AI Answer* ({completed_count} steps executed):\n\n"
+            f"{verification_summary}"
         )
 
         if channel == "telegram":
