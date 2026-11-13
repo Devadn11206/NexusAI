@@ -156,8 +156,6 @@ async def browser_agent_node(state: NexusState) -> Dict[str, Any]:
                         "path": shot_path,
                         "type": "image/png",
                     })
-                    "results": results,
-                }
             elif tool_name in ("navigate_page", "browse", "scrape", "open_url"):
                 url = params.get("url", query)
                 page_data = await browser.navigate_page(url=url)
