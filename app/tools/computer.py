@@ -571,6 +571,28 @@ async def launch_application(app_name: str, args: Optional[List[str]] = None) ->
     target = resolution.get("launch_target") or resolve_app_alias(clean_app)
     canonical = resolution.get("canonical_name", clean_app)
 
+    # If target is not an absolute path that exists, resolve from the 5-source installed app index
+    if sys.platform == "win32" and not os.path.exists(target):
+        indexed_apps = _build_installed_app_index()
+        # Look for executable_path in registry or start menu
+        for app in indexed_apps:
+            p_path = app.get("executable_path", "")
+            if p_path and os.path.exists(p_path):
+                n_low = app.get("name", "").lower()
+                e_base = Path(p_path).stem.lower()
+                c_low = canonical.lower()
+                q_low = clean_app.lower()
+                t_low = target.lower()
+                if (
+                    q_low in (n_low, e_base)
+                    or t_low in (n_low, e_base)
+                    or c_low in n_low
+                    or n_low in c_low
+                ):
+                    target = p_path
+                    logger.info(f"[ComputerEngine] Resolved '{clean_app}' to exact executable path: {target}")
+                    break
+
     logger.info(f"[ComputerEngine] Launching desktop application: '{target}' (resolved '{clean_app}' -> '{canonical}')")
 
     def _sync_launch():
