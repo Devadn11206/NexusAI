@@ -66,6 +66,11 @@ class CronSchedulerEngine:
             "last_run": None,
         }
         logger.info(f"[SchedulerEngine] Registered job '{job_id}' (every {interval_seconds}s)")
+        if self._is_active and job_id not in self._running_tasks:
+            task = asyncio.create_task(
+                self._job_runner_loop(job_id, interval_seconds, handler)
+            )
+            self._running_tasks[job_id] = task
 
     async def _job_runner_loop(self, job_id: str, interval_seconds: int, handler: Callable[[], Any]):
         """Runs periodic job execution loop asynchronously."""

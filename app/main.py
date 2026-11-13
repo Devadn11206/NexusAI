@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.database import init_redis_pool, close_redis_pool, engine
+from app.core.scheduler import scheduler_engine
+from app.gateway.telegram_hub import publish_or_update_master_hub, load_hub_state
 from app.api.v1.health import router as health_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.gateway.webhooks import router as external_webhooks_router
@@ -32,10 +34,59 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error(f"Redis initialization warning (will retry on demand): {exc}")
 
+    # Start Scheduler Engine & Register Telemetry Refresh
+    try:
+        scheduler_engine.start()
+
+        # Telemetry refresh cron job
+        async def _refresh_telegram_hub():
+            try:
+                state = load_hub_state()
+                chat_id = state.get("chat_id")
+                if not chat_id and settings.ALLOWED_TELEGRAM_CHAT_IDS:
+                    chat_id = settings.ALLOWED_TELEGRAM_CHAT_IDS[0]
+                if chat_id:
+                    curr_view = state.get("current_view", "hub:main")
+                    await publish_or_update_master_hub(
+                        chat_id=chat_id,
+                        target_deck=curr_view,
+                        edit_in_place=True,
+                    )
+            except Exception as e:
+                logger.debug(f"[TelegramHub] Refresh loop note: {e}")
+
+        scheduler_engine.register_job(
+            job_id="telegram_hub_telemetry_refresh",
+            name="Telegram Master Hub Telemetry Refresh",
+            interval_seconds=30,
+            handler=_refresh_telegram_hub,
+            description="Updates pinned Telegram Master Hub live telemetry header",
+        )
+        logger.info("Telegram Master Hub telemetry periodic refresh registered.")
+
+        # Initial Master Hub publish if chat_id known
+        init_chat = None
+        state = load_hub_state()
+        if state.get("chat_id"):
+            init_chat = state["chat_id"]
+        elif settings.ALLOWED_TELEGRAM_CHAT_IDS:
+            init_chat = settings.ALLOWED_TELEGRAM_CHAT_IDS[0]
+        if init_chat:
+            asyncio.create_task(
+                publish_or_update_master_hub(
+                    chat_id=init_chat,
+                    target_deck="hub:main",
+                    edit_in_place=True,
+                )
+            )
+    except Exception as exc:
+        logger.warning(f"Scheduler & Hub startup note: {exc}")
+
     yield
 
     # Clean shutdown
     logger.info("Shutting down NEXUS AI...")
+    scheduler_engine.stop()
     await close_redis_pool()
     await engine.dispose()
     logger.info("Database and Redis connections gracefully terminated.")

@@ -74,6 +74,10 @@ class RecommendationEngine:
     def __init__(self):
         pass
 
+    def generate_multi_hour_playlist(self, seed_intent: str = "focus", target_duration_minutes: int = 120) -> Dict[str, Any]:
+        """Convenience alias for multi-hour playlist generation."""
+        return self.generate_ai_playlist(prompt=seed_intent, duration_minutes=target_duration_minutes)
+
     def generate_ai_playlist(self, prompt: str, duration_minutes: Optional[int] = None) -> Dict[str, Any]:
         """
         Decomposes request into a curated, ordered tracklist that fills the target duration.

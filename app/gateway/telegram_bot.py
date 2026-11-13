@@ -11,6 +11,10 @@ from typing import Dict, Any, Optional
 
 from app.core.security import is_telegram_user_whitelisted
 from app.core.repo_scanner import RepoAppScanner
+from app.gateway.telegram_hub import (
+    publish_or_update_master_hub,
+    handle_hub_callback,
+)
 from app.gateway.telegram_menu import (
     build_dynamic_control_center,
     get_control_center_message_text,
@@ -28,12 +32,12 @@ class TelegramGatewayBot:
 
     @classmethod
     async def handle_command(cls, chat_id: str, command: str) -> None:
-        """Handles slash commands like /menu, /apps, /start, /close."""
+        """Handles slash commands like /hub, /menu, /apps, /start, /close."""
         cmd_clean = command.strip().lower()
-        if cmd_clean in ("/menu", "/apps", "/start", "/control"):
-            msg_text = get_control_center_message_text()
-            markup = build_dynamic_control_center(page=1)
-            await telegram_service.send_menu(chat_id=chat_id, text=msg_text, reply_markup=markup)
+        if cmd_clean in ("/hub", "/master", "/command", "/dashboard"):
+            await publish_or_update_master_hub(chat_id=chat_id, target_deck="hub:main", edit_in_place=False)
+        elif cmd_clean in ("/menu", "/apps", "/start", "/control"):
+            await publish_or_update_master_hub(chat_id=chat_id, target_deck="hub:main", edit_in_place=False)
         elif cmd_clean in ("/music", "/player", "/spotify"):
             kb = get_music_control_keyboard()
             msg = get_music_control_message_text()
@@ -105,6 +109,21 @@ class TelegramGatewayBot:
             return {"status": "unauthorized"}
 
         logger.info(f"[TelegramGateway] Handling callback '{data}' from {sender_id} in chat {chat_id}")
+
+        # 1. Check if callback belongs to the 6-Module Telegram Hub
+        if (
+            data.startswith("hub:")
+            or data.startswith("m1:")
+            or data.startswith("m2:")
+            or data.startswith("m3:")
+            or data.startswith("m4:")
+            or data.startswith("m5:")
+            or data.startswith("m6:")
+            or data.startswith("macro:")
+            or data.startswith("approve:")
+            or data.startswith("reject:")
+        ):
+            return await handle_hub_callback(callback_query)
 
         # 2. Application Launch Dispatch
         if data.startswith("launch:"):

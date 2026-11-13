@@ -89,6 +89,32 @@ class VoiceSynthesizer:
             "available_voices": VOICE_PROFILES,
         }
 
+    async def synthesize_speech_to_file(
+        self,
+        text: str,
+        output_filename: str = "speech.mp3",
+        voice_key: Optional[str] = None,
+    ) -> Path:
+        """Synthesizes text and saves it directly to workspace/audio."""
+        audio_dir = resolve_safe_workspace_path("audio")
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        out_path = audio_dir / output_filename
+        target_key = voice_key.lower() if voice_key and voice_key.lower() in VOICE_PROFILES else self.active_voice_key
+        target_voice = VOICE_PROFILES[target_key]
+        try:
+            communicate = edge_tts.Communicate(text=text, voice=target_voice)
+            await communicate.save(str(out_path))
+        except Exception as exc:
+            logger.warning(f"[VoiceSynthesizer] edge-tts file save failed ({exc}); falling back to offline Kokoro.")
+            raw_bytes = self._synthesize_kokoro_offline(text)
+            if raw_bytes:
+                with open(out_path, "wb") as f:
+                    f.write(raw_bytes)
+            else:
+                with open(out_path, "wb") as f:
+                    f.write(b"")
+        return out_path
+
     async def stream_audio_chunks(
         self,
         text: str,

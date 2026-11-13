@@ -106,6 +106,47 @@ class TelegramMessagingService:
             resp.raise_for_status()
             return resp.json()
 
+    async def send_voice(
+        self,
+        chat_id: Union[int, str],
+        voice_bytes_or_path: Union[bytes, str, Path],
+        caption: str = "",
+    ) -> Dict[str, Any]:
+        """Send a voice note audio (.ogg/.mp3) to Telegram."""
+        url = f"{self.base_url}/sendVoice"
+        data = {"chat_id": str(chat_id), "caption": caption}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if isinstance(voice_bytes_or_path, (str, Path)):
+                v_path = Path(voice_bytes_or_path).resolve()
+                if not v_path.exists():
+                    raise FileNotFoundError(f"Voice file not found: {voice_bytes_or_path}")
+                with open(v_path, "rb") as f:
+                    files = {"voice": (v_path.name, f, "audio/ogg")}
+                    resp = await client.post(url, data=data, files=files)
+            else:
+                files = {"voice": ("voice_response.ogg", voice_bytes_or_path, "audio/ogg")}
+                resp = await client.post(url, data=data, files=files)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def pin_chat_message(self, chat_id: Union[int, str], message_id: int) -> Dict[str, Any]:
+        """Pins a message in chat so the Master Hub stays permanently at the top."""
+        url = f"{self.base_url}/pinChatMessage"
+        payload = {"chat_id": str(chat_id), "message_id": message_id, "disable_notification": True}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def set_chat_menu_button(self, chat_id: Union[int, str], menu_button: Dict[str, Any]) -> Dict[str, Any]:
+        """Sets the Telegram Chat Menu Button (e.g. MenuButtonWebApp)."""
+        url = f"{self.base_url}/setChatMenuButton"
+        payload = {"chat_id": str(chat_id), "menu_button": menu_button}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            return resp.json()
+
     async def send_approval_buttons(
         self, chat_id: Union[int, str], text: str, approval_id: str
     ) -> Dict[str, Any]:
