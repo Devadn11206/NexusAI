@@ -383,29 +383,50 @@ def build_window_action_deck(pid: int, title: str) -> Dict[str, Any]:
     return {"text": text, "reply_markup": {"inline_keyboard": keyboard}}
 
 
-def build_quick_launch_deck() -> Dict[str, Any]:
-    """Sub-deck: 1-Tap launcher for top installed apps."""
-    text = "🚀 *Quick Desktop Application Launcher*:\nTap any application to launch visibly on your Windows screen:"
-    apps = [
-        ("Google Chrome", "chrome"),
-        ("VS Code", "vscode"),
-        ("Spotify", "spotify"),
-        ("File Explorer", "explorer"),
-        ("Terminal / CMD", "terminal"),
-        ("Notepad", "notepad"),
-        ("Calculator", "calc"),
-        ("Settings", "settings"),
-    ]
+def build_quick_launch_deck(page: int = 1) -> Dict[str, Any]:
+    """Sub-deck: Dynamic paginated 1-Tap launcher for ALL registered & scanned apps."""
+    from app.core.repo_scanner import RepoAppScanner
+    import math
+
+    apps = RepoAppScanner.get_all_registered_apps()
+    total_apps = len(apps)
+    per_page = 8
+    total_pages = max(1, math.ceil(total_apps / per_page)) if total_apps > 0 else 1
+    page = max(1, min(page, total_pages))
+
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    current_batch = apps[start_idx:end_idx]
+
+    text = (
+        f"🚀 *All Laptop Applications* (Page {page}/{total_pages} • {total_apps} apps total):\n"
+        f"Tap any app to launch visibly on your Windows screen:"
+    )
 
     keyboard = []
     row = []
-    for name, alias in apps:
-        row.append({"text": name, "callback_data": f"launch:{alias}"})
+    for app in current_batch:
+        d_name = app.get("display_name") or app.get("name") or app.get("alias_key", "App")
+        alias = app.get("alias_key") or d_name.lower().replace(" ", "_")
+        emoji = app.get("emoji", "🚀")
+        # Shorten button label if needed
+        btn_text = f"{emoji} {d_name[:18]}"
+        row.append({"text": btn_text, "callback_data": f"launch:{alias}"})
         if len(row) == 2:
             keyboard.append(row)
             row = []
     if row:
         keyboard.append(row)
+
+    # Pagination navigation controls
+    nav_row = []
+    if page > 1:
+        nav_row.append({"text": "⬅️ Prev", "callback_data": f"m2:quick_launch:page:{page - 1}"})
+    nav_row.append({"text": f"📄 {page}/{total_pages}", "callback_data": "hub:noop"})
+    if page < total_pages:
+        nav_row.append({"text": "Next ➡️", "callback_data": f"m2:quick_launch:page:{page + 1}"})
+    if nav_row:
+        keyboard.append(nav_row)
 
     keyboard.append(get_nav_footer_row("hub:m2"))
     return {"text": text, "reply_markup": {"inline_keyboard": keyboard}}
@@ -692,8 +713,14 @@ async def publish_or_update_master_hub(
         deck_data = await build_m2_deck()
     elif target_deck == "m2:running_apps":
         deck_data = await build_running_apps_deck()
-    elif target_deck == "m2:quick_launch":
-        deck_data = build_quick_launch_deck()
+    elif target_deck == "m2:quick_launch" or target_deck.startswith("m2:quick_launch:page:"):
+        page_num = 1
+        if "page:" in target_deck:
+            try:
+                page_num = int(target_deck.split(":")[-1])
+            except ValueError:
+                page_num = 1
+        deck_data = build_quick_launch_deck(page=page_num)
     elif target_deck == "hub:m3":
         deck_data = await build_m3_deck()
     elif target_deck == "hub:m4":
@@ -811,11 +838,14 @@ async def handle_hub_callback(callback_query: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # 3. Navigation Decks
-    if data in [
-        "hub:main", "hub:m1", "hub:m2", "hub:m3", "hub:m4", "hub:m5", "hub:m6", "hub:macros",
-        "m1:pick_voice", "m1:list_approvals", "m2:running_apps", "m2:quick_launch",
-        "m5:browse_docs",
-    ]:
+    if (
+        data in [
+            "hub:main", "hub:m1", "hub:m2", "hub:m3", "hub:m4", "hub:m5", "hub:m6", "hub:macros",
+            "m1:pick_voice", "m1:list_approvals", "m2:running_apps", "m2:quick_launch",
+            "m5:browse_docs",
+        ]
+        or data.startswith("m2:quick_launch:page:")
+    ):
         await publish_or_update_master_hub(chat_id=chat_id, target_deck=data, message_id=message_id)
         return {"status": "navigated", "target": data}
 
