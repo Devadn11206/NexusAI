@@ -119,7 +119,19 @@ async def browser_agent_node(state: NexusState) -> Dict[str, Any]:
     try:
         # Run visual Chrome headful by default when user requests browser viewing
         async with BrowserEngine(headless=False, use_system_chrome=True) as browser:
-            if tool_name in ("launch_visible_chrome", "open_chrome", "view_site", "open_browser"):
+            if tool_name in ("execute_browser_intent", "browser_intent", "universal_browser"):
+                from app.tools.browser import execute_browser_intent
+                instruction = params.get("instruction") or params.get("query") or query
+                result_data = await execute_browser_intent(instruction=instruction, user_context=params)
+                if result_data.get("artifacts"):
+                    for art_path in result_data["artifacts"]:
+                        artifacts.append({
+                            "step_id": step_id,
+                            "filename": Path(art_path).name,
+                            "path": art_path,
+                            "type": "application/octet-stream" if not str(art_path).endswith(".png") else "image/png",
+                        })
+            elif tool_name in ("launch_visible_chrome", "open_chrome", "view_site", "open_browser"):
                 url = params.get("url", query)
                 chrome_res = await browser.launch_visible_chrome(url=url)
                 result_data = chrome_res
@@ -540,8 +552,18 @@ async def computer_agent_node(state: NexusState) -> Dict[str, Any]:
         elif tool_name in ("launch_app", "launch_application", "open_app"):
             app_name = params.get("app_name") or params.get("app") or ""
             args = params.get("args", [])
+            # Check if Chrome launch actually requested a web search or url
+            if any(k in app_name.lower() for k in ["chrome", "browser"]) and (
+                params.get("query")
+                or params.get("search")
+                or params.get("url")
+                or any(w in str(args).lower() for w in ["http", "search", "google"])
+            ):
+                from app.tools.browser import execute_browser_intent
+                intent_q = params.get("query") or params.get("search") or params.get("url") or f"open {app_name}"
+                result_data = await execute_browser_intent(instruction=intent_q)
             # Check if Spotify playback is requested inside launch_app params
-            if "spotify" in app_name.lower() and (
+            elif "spotify" in app_name.lower() and (
                 params.get("query")
                 or params.get("song")
                 or params.get("playlist")

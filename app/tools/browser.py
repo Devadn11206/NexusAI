@@ -2,10 +2,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
 import urllib.parse
+import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import httpx
@@ -243,6 +245,225 @@ async def search_web(query: str, max_results: int = 8) -> Dict[str, Any]:
         "active_url": navigated_url,
         "count": len(results),
         "results": results,
+    }
+
+
+async def execute_browser_intent(instruction: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    High-level universal orchestrator for ALL natural language browser, search, and web requests.
+    Understands casual slang, direct URLs, research requests, downloads, and interactive actions,
+    and executes them end-to-end on persistent visible System Chrome.
+    """
+    raw_prompt = instruction.strip()
+    p_lower = raw_prompt.lower()
+    logger.info(f"[BrowserEngine] Executing universal browser intent: '{raw_prompt}'")
+
+    # 1. Direct File Download Pattern (URL ending in extension or "download <url>")
+    url_match = re.search(r'https?://[^\s]+', raw_prompt)
+    if "download" in p_lower and url_match:
+        target_url = url_match.group(0).rstrip('.,;)"\'')
+        parsed = urllib.parse.urlparse(target_url)
+        path_name = Path(parsed.path).name or "downloaded_file.bin"
+        downloads_dir = resolve_safe_workspace_path("downloads")
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+        out_file = downloads_dir / path_name
+
+        try:
+            headers = {"User-Agent": USER_AGENT}
+            async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=30.0) as client:
+                resp = await client.get(target_url)
+                resp.raise_for_status()
+                with open(out_file, "wb") as f:
+                    f.write(resp.content)
+            logger.info(f"[BrowserEngine] Direct file downloaded to: {out_file} ({out_file.stat().st_size} bytes)")
+            return {
+                "status": "success",
+                "action": "download",
+                "url": target_url,
+                "file_path": str(out_file),
+                "filename": out_file.name,
+                "bytes": out_file.stat().st_size,
+                "summary": f"✅ Downloaded file `{out_file.name}` ({round(out_file.stat().st_size / 1024, 1)} KB) directly from {target_url}.",
+                "artifacts": [str(out_file)],
+            }
+        except Exception as exc:
+            logger.error(f"[BrowserEngine] Direct download failed: {exc}", exc_info=True)
+            return {"status": "error", "action": "download", "url": target_url, "error": str(exc)}
+
+    # 2. Chrome History & Bookmarks Inspection
+    if any(k in p_lower for k in ["chrome history", "browser history", "browsing history", "check history"]):
+        q = raw_prompt
+        for phrase in ["check my chrome history for", "check chrome history for", "search chrome history for", "check history for", "chrome history"]:
+            q = q.lower().replace(phrase, "")
+        q = q.strip() or None
+        engine = BrowserEngine(headless=True)
+        items = engine.manage_browsing_history(limit=15, query=q)
+        hist_text = "\n".join([f"• [{item.get('title', 'Page')}]({item.get('url')})" for item in items[:8]]) if items else "No matching Chrome history entries found."
+        return {
+            "status": "success",
+            "action": "history",
+            "query": q,
+            "items_count": len(items),
+            "summary": f"🔍 **Chrome Browsing History** ({len(items)} entries found):\n\n{hist_text}",
+            "items": items,
+        }
+
+    if any(k in p_lower for k in ["chrome bookmark", "browser bookmark", "bookmarks", "check bookmarks"]):
+        engine = BrowserEngine(headless=True)
+        res_bm = engine.manage_bookmarks(action="list")
+        bms = res_bm.get("bookmarks", [])
+        bm_text = "\n".join([f"• [{b.get('name', 'Bookmark')}]({b.get('url')})" for b in bms[:8]]) if bms else "No bookmarks found."
+        return {
+            "status": "success",
+            "action": "bookmarks",
+            "summary": f"🔖 **Chrome Bookmarks**:\n\n{bm_text}",
+            "bookmarks": bms,
+        }
+
+    # 3. Autonomous Research to Excel / Literature Comparison
+    if ("internship" in p_lower or "research" in p_lower or "compare" in p_lower or "matrix" in p_lower) and ("excel" in p_lower or "xlsx" in p_lower or "spreadsheet" in p_lower or "table" in p_lower):
+        from app.tools.research_engine import run_structured_research_to_excel
+        out_name = "AIML_Internships_Comparison.xlsx" if "internship" in p_lower else "Research_Comparison_Matrix.xlsx"
+        res_excel = await run_structured_research_to_excel(goal=raw_prompt, output_filename=out_name)
+        art_path = res_excel.get("file_path")
+        return {
+            "status": "success",
+            "action": "research_to_excel",
+            "summary": f"📊 **Research Sheet Generated**: Successfully synthesized research and exported formatted Excel workbook `{out_name}`.",
+            "artifacts": [art_path] if art_path else [],
+            "data": res_excel,
+        }
+
+    # 4. Academic Search (arXiv, Semantic Scholar, OpenAlex)
+    if "arxiv" in p_lower or "semantic scholar" in p_lower or "academic paper" in p_lower:
+        from app.tools.research_engine import search_academic_papers
+        q = raw_prompt
+        for phrase in ["search academic papers on arxiv for", "search arxiv for", "find papers on", "search papers"]:
+            q = q.lower().replace(phrase, "")
+        res_papers = await search_academic_papers(query=q.strip() or "machine learning agents", max_results=5)
+        papers = res_papers.get("papers", [])
+        p_text = "\n\n".join([f"• **{p.get('title')}**\n  _{p.get('authors')}_ ({p.get('year')})\n  [Link]({p.get('url')})" for p in papers]) if papers else "No papers found."
+        return {
+            "status": "success",
+            "action": "academic_search",
+            "summary": f"📚 **Academic Research Papers**:\n\n{p_text}",
+            "papers": papers,
+        }
+
+    # 5. Direct Domain / URL Navigation (e.g., "open github.com", "go to reddit.com", "open leetcode two sum")
+    # Identify explicit URLs or well-known domain names
+    domain_match = re.search(r'\b([a-zA-Z0-9-]+\.(?:com|org|net|io|co|edu|gov|ai|app|dev)(?:/[^\s]*)?)\b', raw_prompt, re.IGNORECASE)
+    has_explicit_url = bool(url_match or domain_match)
+
+    if has_explicit_url and not any(w in p_lower for w in ["google", "search for", "look up"]):
+        if url_match:
+            target_url = url_match.group(0).rstrip('.,;)"\'')
+        else:
+            raw_domain = domain_match.group(1).rstrip('.,;)"\'')
+            target_url = f"https://{raw_domain}"
+
+        logger.info(f"[BrowserEngine] Direct URL navigation to: {target_url}")
+        page = await get_visible_chrome_page()
+        try:
+            await page.goto(target_url, timeout=20000, wait_until="domcontentloaded")
+            await page.bring_to_front()
+            try:
+                from app.tools.computer import force_window_foreground
+                force_window_foreground("chrome")
+            except Exception:
+                pass
+
+            title = await page.title()
+            page_url = page.url
+
+            # Capture tab screenshot proof
+            shot_file = resolve_safe_workspace_path(f"images/browser_{uuid.uuid4().hex[:6]}.png")
+            shot_file.parent.mkdir(parents=True, exist_ok=True)
+            await page.screenshot(path=str(shot_file))
+
+            # Detect login wall
+            html = await page.content()
+            engine = BrowserEngine(headless=True)
+            login_status = await engine.detect_login_requirement(html)
+
+            summary = f"🌐 **Navigated to [{title}]({page_url})** in visible Chrome.\n"
+            if login_status.get("requires_login"):
+                summary += f"⚠️ **Notice**: Site appears to require authentication ({login_status.get('reason')})."
+
+            return {
+                "status": "success",
+                "action": "navigate",
+                "title": title,
+                "url": page_url,
+                "requires_login": login_status.get("requires_login", False),
+                "summary": summary,
+                "artifacts": [str(shot_file)],
+            }
+        except Exception as nav_err:
+            logger.error(f"[BrowserEngine] Navigation to {target_url} failed: {nav_err}")
+            return {"status": "error", "action": "navigate", "url": target_url, "error": str(nav_err)}
+
+    # 6. Web Search with Visible Chrome Navigation and Resilient Fallback
+    # Extract the clean core search term
+    clean_q = raw_prompt
+    for phrase in [
+        "open chrome and search for", "open chrome and search", "open browser and search for",
+        "search for in chrome", "search for", "search in chrome for", "search in chrome",
+        "search", "google for", "google", "browse for", "browse", "look up", "find",
+        "open youtube and play", "open youtube", "open",
+    ]:
+        if clean_q.lower().startswith(phrase):
+            clean_q = clean_q[len(phrase):].strip()
+            break
+
+    clean_q = clean_q.replace("in chrome", "").replace("on chrome", "").strip() or raw_prompt
+
+    # Special handling for LeetCode / CodeChef challenges
+    if "leetcode" in p_lower and not has_explicit_url:
+        clean_q = f"leetcode {clean_q.replace('leetcode', '').strip()}"
+    elif "youtube" in p_lower:
+        clean_q = f"youtube {clean_q.replace('youtube', '').strip()}"
+
+    logger.info(f"[BrowserEngine] Performing structured search for: '{clean_q}'")
+    search_res = await search_web(query=clean_q, max_results=6)
+    results = search_res.get("results", [])
+
+    # Format structured results
+    res_lines = []
+    for r in results[:5]:
+        t = r.get("title", "Result")
+        u = r.get("url", "")
+        snip = r.get("snippet", "")
+        res_lines.append(f"• **[{t}]({u})**\n  _{snip}_")
+
+    search_text = "\n\n".join(res_lines) if res_lines else "Search completed in visible Chrome window."
+
+    # Capture tab screenshot proof
+    artifacts = []
+    try:
+        page = await get_visible_chrome_page()
+        shot_file = resolve_safe_workspace_path(f"images/search_{uuid.uuid4().hex[:6]}.png")
+        shot_file.parent.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(shot_file))
+        artifacts.append(str(shot_file))
+    except Exception:
+        pass
+
+    summary = (
+        f"🔍 **Web Search Results for '{clean_q}'** (via {search_res.get('engine', 'Google')}):\n\n"
+        f"{search_text}\n\n"
+        f"_Visible tab remains open on your screen._"
+    )
+
+    return {
+        "status": "success",
+        "action": "search",
+        "query": clean_q,
+        "engine": search_res.get("engine", "google"),
+        "results_count": len(results),
+        "results": results,
+        "summary": summary,
+        "artifacts": artifacts,
     }
 
 

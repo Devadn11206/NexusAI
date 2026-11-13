@@ -91,6 +91,11 @@ async def dispatch_tool_call(tool_name: str, tool_args: Dict[str, Any]) -> Dict[
         return await close_application(process_name_or_title=process_name)
 
     # 3. Web & Browser Automation
+    elif name_clean in ("execute_browser_intent", "browser_intent", "universal_browser"):
+        from app.tools.browser import execute_browser_intent
+        instruction = tool_args.get("instruction") or tool_args.get("query") or ""
+        return await execute_browser_intent(instruction=instruction, user_context=tool_args)
+
     elif name_clean in ("search_web", "web_search", "google_search"):
         query = tool_args.get("query") or tool_args.get("text") or ""
         from app.tools.browser import search_web
@@ -332,21 +337,14 @@ async def intent_and_context_node(state: NexusState) -> Dict[str, Any]:
         category = "MEDIA"
         song = p_lower.replace("open youtube and play", "").replace("play", "").replace("song", "").strip()
         entities = {"song": song or "popular track", "service": "youtube_music" if "youtube" in p_lower else "spotify"}
-    elif any(w in p_lower for w in ["search", "google", "browse", "look up"]) or (
-        ("chrome" in p_lower or "browser" in p_lower) and any(k in p_lower for k in ["search", "find", "look"])
+    elif (
+        any(w in p_lower for w in ["search", "google", "browse", "look up", "find", "history", "bookmark"])
+        or ("download" in p_lower and "http" in p_lower)
+        or any(d in p_lower for d in [".com", ".org", ".io", ".dev", ".ai", "github", "reddit", "leetcode", "youtube", "arxiv"])
+        or (("chrome" in p_lower or "browser" in p_lower) and not any(c in p_lower for c in ["close", "kill", "quit", "exit"]))
     ):
         category = "BROWSER"
-        # Extract search query accurately
-        clean_search = p_lower
-        for phrase in [
-            "open chrome and search for", "open chrome and search", "open browser and search for",
-            "search for in chrome", "search for", "search in chrome for", "search in chrome",
-            "search", "google for", "google", "browse for", "browse", "look up"
-        ]:
-            if phrase in clean_search:
-                clean_search = clean_search.replace(phrase, "")
-        clean_search = clean_search.replace("in chrome", "").replace("on chrome", "").strip()
-        entities = {"query": clean_search or raw_text.strip()}
+        entities = {"query": raw_text.strip(), "instruction": raw_text.strip()}
     elif any(w in p_lower for w in ["open", "launch"]):
         category = "SYSTEM"
         app = p_lower.replace("open", "").replace("launch", "").replace("please", "").strip()
@@ -388,14 +386,14 @@ async def task_planner_node(state: NexusState) -> Dict[str, Any]:
     p_lower = resolved_query.lower()
     plan_steps: List[Dict[str, Any]] = []
 
-    # 0. Primary Web Search Routing (Takes precedence when user asks to search/browse web)
+    # 0. Primary Universal Browser & Web Routing
     if category == "BROWSER":
-        q = entities.get("query", resolved_query)
+        instruction = entities.get("instruction") or entities.get("query") or resolved_query
         plan_steps.append({
             "step_id": "step_1",
-            "description": f"Search web for: {q}",
-            "tool_name": "search_web",
-            "tool_args": {"query": q},
+            "description": f"Execute browser action in visible Chrome: {instruction}",
+            "tool_name": "execute_browser_intent",
+            "tool_args": {"instruction": instruction},
             "status": "pending",
         })
 

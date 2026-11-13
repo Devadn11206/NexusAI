@@ -73,7 +73,29 @@ async def execute_task_graph_background(
         )
 
         if channel == "telegram":
-            await telegram_service.send_text(chat_id=chat_id, text=summary)
+            # If the task involved browser actions, attach predictive quick action buttons
+            is_browser_task = False
+            task_graph = plan_dict or {}
+            for step in task_graph.get("steps", []):
+                t_name = str(step.get("tool_name", "")).lower()
+                t_agent = str(step.get("target_agent", "")).lower()
+                if "browser" in t_name or "browser" in t_agent or "search" in t_name:
+                    is_browser_task = True
+                    break
+
+            if is_browser_task:
+                followup_kb = {
+                    "inline_keyboard": [
+                        [
+                            {"text": "📸 Screenshot Tab", "callback_data": "m3:browser_shot"},
+                            {"text": "🛑 Close Chrome", "callback_data": "m2:act:close:chrome"},
+                        ]
+                    ]
+                }
+                await telegram_service.send_menu(chat_id=chat_id, text=summary, reply_markup=followup_kb)
+            else:
+                await telegram_service.send_text(chat_id=chat_id, text=summary)
+
             # Dispatch artifacts if any
             for art in final_state.get("artifacts", []):
                 try:

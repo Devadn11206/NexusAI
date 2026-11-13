@@ -22,7 +22,8 @@ Target Agent Capabilities:
   * To close/quit an app: tool_name `close_application` with `tool_params: {"process_name": "notepad"}` (or "chrome", "spotify", "calculator", "vscode", etc.).
   * To play songs or playlists on Spotify: tool_name `play_music` with `tool_params: {"app_name": "spotify", "song": "Metro Proposal", "playlist": "Liked Songs"}`.
   * To control playback: tool_name `control_media` with `tool_params: {"action": "play" | "pause" | "stop" | "next" | "previous" | "forward" | "rewind" | "volume_up" | "volume_down" | "mute" | "shuffle" | "repeat"}`.
-- BrowserAgent: Web searches, reading websites, scraping data, navigating portals, interacting with web apps. Tool name: `search_web` or `navigate_page`.
+- BrowserAgent: Web searches, reading websites, scraping data, navigating portals, interacting with web apps. Tool name: `execute_browser_intent` (for any natural-language web browsing, search, URL opening, download, or site interaction) or `search_web`.
+  * For ANY browser request (e.g. "open Chrome and search for X", "google Y", "open github.com", "check leetcode"): tool_name `execute_browser_intent` with `tool_params: {"instruction": "<full prompt>"}`. DO NOT route web searches to `launch_application("chrome")`.
 - FileAgent: File & folder operations in ./workspace/, reading/writing CSV, text, PDFs, Excel sheets (.xlsx), Word docs (.docx). Tool name: `create_file`, `read_file`, `organize_directory`.
 - DeveloperAgent: Shell commands, Git operations, running Python scripts, debugging code, executing tests.
   * To execute shell commands: tool_name `run_command` with `tool_params: {"command": "dir"}`.
@@ -143,31 +144,25 @@ class TaskPlanner:
         """Deterministic rule-based fallback DAG generator."""
         p_lower = prompt.lower()
 
-        # Multi-step search & document pattern
-        if ("search" in p_lower or "research" in p_lower) and ("excel" in p_lower or "file" in p_lower or "doc" in p_lower):
+        # Multi-step search & document pattern / Autonomous research to excel
+        if (
+            ("search" in p_lower or "research" in p_lower or "internship" in p_lower or "find" in p_lower)
+            and ("excel" in p_lower or "file" in p_lower or "doc" in p_lower or "sheet" in p_lower)
+        ):
             return TaskGraph(
                 intent_category=IntentCategory.HYBRID,
-                summary="Research topic online and create structured file in workspace.",
+                summary=f"Research topic online and create structured file in workspace: {prompt}",
                 requires_clarification=False,
                 clarification_prompt=None,
                 steps=[
                     TaskStep(
                         step_id="step_1",
-                        description=f"Search online information for: {prompt}",
+                        description=f"Execute browser research and structured data extraction: {prompt}",
                         target_agent=TargetAgent.BrowserAgent,
-                        tool_name="web_search",
-                        tool_params={"query": prompt},
+                        tool_name="execute_browser_intent",
+                        tool_params={"instruction": prompt, "query": prompt},
                         depends_on=[],
-                        expected_output="Gathered research findings and summarized facts.",
-                    ),
-                    TaskStep(
-                        step_id="step_2",
-                        description="Format findings and save document into workspace sandbox.",
-                        target_agent=TargetAgent.FileAgent,
-                        tool_name="write_file",
-                        tool_params={"filename": "research_report.xlsx" if "excel" in p_lower else "research_report.md"},
-                        depends_on=["step_1"],
-                        expected_output="Generated file artifact stored in ./workspace/.",
+                        expected_output="Gathered research findings, tabular comparison, or Excel artifact.",
                     ),
                 ],
             )
@@ -201,6 +196,32 @@ class TaskPlanner:
                 ],
             )
 
+        # Browser / Web Search / Chrome pattern
+        # Catches casual web searches, URLs, domains, leetcode, youtube, downloads, history
+        if (
+            any(w in p_lower for w in ["browse", "search", "google", "website", "url", "scrape", "look up", "history", "bookmark"])
+            or ("download" in p_lower and "http" in p_lower)
+            or any(d in p_lower for d in [".com", ".org", ".io", ".dev", ".ai", "github", "reddit", "leetcode", "youtube", "arxiv"])
+            or (("chrome" in p_lower or "browser" in p_lower) and not any(c in p_lower for c in ["close", "kill", "quit", "exit"]))
+        ):
+            return TaskGraph(
+                intent_category=IntentCategory.BROWSER,
+                summary=f"Execute browser navigation and search in visible Chrome: {prompt}",
+                requires_clarification=False,
+                clarification_prompt=None,
+                steps=[
+                    TaskStep(
+                        step_id="step_1",
+                        description=f"Execute browser action: {prompt}",
+                        target_agent=TargetAgent.BrowserAgent,
+                        tool_name="execute_browser_intent",
+                        tool_params={"instruction": prompt, "query": prompt},
+                        depends_on=[],
+                        expected_output="Live Chrome navigation, search results, or extracted content.",
+                    )
+                ],
+            )
+
         # Developer / Code pattern
         if any(w in p_lower for w in ["code", "script", "run", "python", "terminal", "bash", "git"]):
             return TaskGraph(
@@ -217,26 +238,6 @@ class TaskPlanner:
                         tool_params={"command": prompt},
                         depends_on=[],
                         expected_output="Terminal stdout/stderr and status code.",
-                    )
-                ],
-            )
-
-        # Browser pattern
-        if any(w in p_lower for w in ["browse", "search", "google", "website", "url", "scrape", "look up"]):
-            return TaskGraph(
-                intent_category=IntentCategory.BROWSER,
-                summary="Perform browser navigation and information retrieval.",
-                requires_clarification=False,
-                clarification_prompt=None,
-                steps=[
-                    TaskStep(
-                        step_id="step_1",
-                        description=f"Browse or search web for: {prompt}",
-                        target_agent=TargetAgent.BrowserAgent,
-                        tool_name="web_search",
-                        tool_params={"query": prompt},
-                        depends_on=[],
-                        expected_output="Search results or website contents.",
                     )
                 ],
             )
