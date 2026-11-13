@@ -384,11 +384,73 @@ def build_window_action_deck(pid: int, title: str) -> Dict[str, Any]:
 
 
 def build_quick_launch_deck(page: int = 1) -> Dict[str, Any]:
-    """Sub-deck: Dynamic paginated 1-Tap launcher for ALL registered & scanned apps."""
-    from app.core.repo_scanner import RepoAppScanner
+    """Sub-deck: Dynamic paginated 1-Tap launcher for verified, installed apps on this machine."""
     import math
+    import os
+    from app.tools.computer import _build_installed_app_index
 
-    apps = RepoAppScanner.get_all_registered_apps()
+    installed = _build_installed_app_index()
+
+    EMOJIS = {
+        'chrome': '🌐', 'brave': '🦁', 'edge': '🌊', 'firefox': '🦊',
+        'spotify': '🎵', 'vlc': '🎬', 'wmplayer': '▶️',
+        'code': '💻', 'vscode': '💻', 'notepad': '📝',
+        'terminal': '⚡', 'powershell': '🔷', 'cmd': '⬛',
+        'word': '📄', 'winword': '📄', 'excel': '📊', 'powerpnt': '📽️', 'onenote': '📓', 'access': '🗄️', 'outlook': '✉️',
+        'explorer': '📁', 'calc': '🔢', 'paint': '🎨', 'settings': '⚙️', 'taskmgr': '📈',
+        'discord': '💬', 'telegram': '✈️', 'whatsapp': '🟢', 'slack': '💼',
+        'steam': '🎮', 'blender': '🧊', 'obs': '📹', '7z': '📦', 'sumo': '🚗',
+    }
+
+    PRIORITY = [
+        'chrome', 'brave', 'code', 'spotify', 'excel', 'word', 'powerpnt', 'notepad',
+        'calc', 'explorer', 'terminal', 'powershell', 'vlc', 'mspaint', 'settings', 'taskmgr'
+    ]
+
+    apps = []
+    seen = set()
+
+    for a in installed:
+        name = a.get('name', '').strip()
+        path = a.get('executable_path', '')
+        app_id = a.get('app_id', '')
+        n_low = name.lower()
+
+        if any(ig in n_low for ig in ['unins', 'setup', 'helper', 'installer', 'iediag', 'crash', 'feedback', 'license', 'diagnostics', 'update']):
+            continue
+
+        exp_path = os.path.expandvars(path) if path else ''
+        is_valid = (exp_path and os.path.exists(exp_path)) or bool(app_id)
+        if not is_valid:
+            continue
+
+        stem = name.split()[0].lower().replace('.exe', '')
+        if stem in seen or len(stem) < 2:
+            continue
+        seen.add(stem)
+
+        em = '🚀'
+        for k, v in EMOJIS.items():
+            if k in n_low or k in stem:
+                em = v
+                break
+
+        apps.append({
+            'display_name': name.replace('.exe', '').title(),
+            'alias_key': stem,
+            'emoji': em,
+            'target': exp_path or app_id
+        })
+
+    def sort_key(item):
+        k = item['alias_key']
+        try:
+            return PRIORITY.index(k)
+        except ValueError:
+            return 999
+
+    apps.sort(key=sort_key)
+
     total_apps = len(apps)
     per_page = 8
     total_pages = max(1, math.ceil(total_apps / per_page)) if total_apps > 0 else 1
@@ -399,17 +461,16 @@ def build_quick_launch_deck(page: int = 1) -> Dict[str, Any]:
     current_batch = apps[start_idx:end_idx]
 
     text = (
-        f"🚀 *All Laptop Applications* (Page {page}/{total_pages} • {total_apps} apps total):\n"
-        f"Tap any app to launch visibly on your Windows screen:"
+        f"🚀 *Installed Applications* (Page {page}/{total_pages} • {total_apps} apps verified on PC):\n"
+        f"Tap any application to launch visibly on your Windows screen:"
     )
 
     keyboard = []
     row = []
     for app in current_batch:
-        d_name = app.get("display_name") or app.get("name") or app.get("alias_key", "App")
-        alias = app.get("alias_key") or d_name.lower().replace(" ", "_")
+        d_name = app.get("display_name")
+        alias = app.get("alias_key")
         emoji = app.get("emoji", "🚀")
-        # Shorten button label if needed
         btn_text = f"{emoji} {d_name[:18]}"
         row.append({"text": btn_text, "callback_data": f"launch:{alias}"})
         if len(row) == 2:
