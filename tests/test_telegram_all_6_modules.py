@@ -263,3 +263,4 @@ async def test_slash_command_hub_integration(mock_messaging):
     """Verify TelegramGatewayBot.handle_command('/hub') publishes master hub."""
     await TelegramGatewayBot.handle_command(chat_id="6663290532", command="/hub")
     assert mock_messaging["send_menu"].called
+

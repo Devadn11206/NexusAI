@@ -679,13 +679,6 @@ async def dynamic_replanner_node(state: NexusState) -> Dict[str, Any]:
         })
 
     # 4. Default fallback: capture desktop screenshot to diagnose error
-    # 13. Module: Autonomous Developer & Competitive Programming
-    elif name_clean in ("run_developer_task", "build_application", "solve_competitive_programming", "developer_agent"):
-        from app.developer.developer_agent import run_developer_task
-        task_type = tool_args.get("task_type", "build_app")
-        params = tool_args.get("params", tool_args)
-        return await run_developer_task(task_type, params)
-
     else:
         fallback_steps.append({
             "step_id": f"replan_{replan_count}_1",
@@ -721,13 +714,6 @@ async def final_responder_node(state: NexusState) -> Dict[str, Any]:
     lines = []
     if failed_count == 0:
         lines.append("✅ **Task Completed Successfully**")
-    # 13. Module: Autonomous Developer & Competitive Programming
-    elif name_clean in ("run_developer_task", "build_application", "solve_competitive_programming", "developer_agent"):
-        from app.developer.developer_agent import run_developer_task
-        task_type = tool_args.get("task_type", "build_app")
-        params = tool_args.get("params", tool_args)
-        return await run_developer_task(task_type, params)
-
     else:
         lines.append(f"⚠️ **Task Completed with {failed_count} Issues**")
 
